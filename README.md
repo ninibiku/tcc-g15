@@ -121,13 +121,18 @@ PyInstaller onefile extraction problem on that system, not something caused by
 this app. `--onedir` works, and is what this branch ships:
 
 ```
-pyinstaller --onedir --windowed --name TCC-G15-quiet ^
+pyinstaller --onedir --windowed --uac-admin --name TCC-G15-quiet ^
   --paths src --icon icons\gaugeIcon.ico ^
   --add-data "icons;icons" --add-data "tcc_g15_task.xml;." src\tcc-g15.py
 ```
 
+`--uac-admin` is not optional. Without it the exe embeds an `asInvoker`
+manifest, starts unelevated, and the WMI query dies with
+`x_access_denied (0x80041003)` — which the app reports as
+"Couldn't instantiate AWCC WMI class. Make sure you're running as Admin."
+
 The resulting folder must be kept together — run `TCC-G15-quiet.exe` from
-inside it as administrator.
+inside it.
 
 ## About the AWCC Telemetry
 
