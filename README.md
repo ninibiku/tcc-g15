@@ -39,6 +39,28 @@ Please report if it worked / didn't work for you. Your feedback is highly apprec
 - ✔️ Option to automatically enable G-mode when GPU/CPU temperature reaches critical
 - ✔️ Support for keyboard G-mode hotkey
 
+## Extra thermal modes (this branch)
+
+This branch exposes three additional thermal modes that are present in Dell's
+firmware enumeration but were never verified by upstream:
+
+| Mode | WMI value | Status |
+|---|---|---|
+| Quiet | 150 (`0x96`) | unverified |
+| Performance | 152 (`0x98`) | unverified |
+| FullSpeed | 153 (`0x99`) | unverified |
+
+They show up in the radio-button selector and in the tray menu next to the
+original `Balanced` / `G_Mode` / `Custom`.
+
+**If the firmware rejects a mode**, the app shows a warning and reverts to the
+last mode that worked, instead of terminating. Upstream calls `errorExit()`
+there, which closes the whole app — that is why the extra modes were left out.
+
+Mode support is per-model. Please open an issue on the fork if you can confirm
+which of them actually work on your laptop, including the model and BIOS
+version.
+
 ## UI hints
 
 - The white dots ("stars") in the corners of the tray icon indicate current G mode state.

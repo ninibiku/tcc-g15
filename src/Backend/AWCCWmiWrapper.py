@@ -10,7 +10,10 @@ class AWCCWmiWrapper:
 
     class ThermalMode(Enum):
         Custom = 0
+        Quiet = 0x96          # 150 - defined in firmware, not verified upstream
         Balanced = 0x97
+        Performance = 0x98    # 152 - defined in firmware, not verified upstream
+        FullSpeed = 0x99      # 153 - defined in firmware, not verified upstream
         G_Mode = 0xAB
 
     _balancedModePatch = None # type: Optional[Union[False, int]]

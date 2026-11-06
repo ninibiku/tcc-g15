@@ -75,8 +75,15 @@ class QPeriodic:
 
 class ThermalMode(Enum):
     Balanced = 'Balanced'
+    Quiet = 'Quiet'
+    Performance = 'Performance'
     G_Mode = 'G_Mode'
+    FullSpeed = 'FullSpeed'
     Custom = 'Custom'
+
+# Modes that exist in the firmware enum but were never verified by upstream.
+# If the firmware rejects them, we warn and revert instead of terminating the app.
+UNVERIFIED_MODES = (ThermalMode.Quiet.value, ThermalMode.Performance.value, ThermalMode.FullSpeed.value)
     
 class SettingsKey(Enum):
     Mode = "app/mode"
@@ -118,7 +125,14 @@ class TCC_GUI(QtWidgets.QWidget):
     _gModeKeySignal = QtCore.Signal()
     _gModeKeyPrevModeStr: Optional[str] = None
 
-    _toaster = WindowsToaster(APP_NAME)
+    try:
+        _toaster = WindowsToaster(APP_NAME)
+    except Exception as _toastInitErr:
+        # Happens when the process has no registered AppUserModelID (running
+        # elevated, or started from a plain interpreter). Upstream lets this
+        # exception escape and the app never starts, so swallow it here.
+        print(f"Toast notifications unavailable: {_toastInitErr}")
+        _toaster = None
 
     _modeSwitch: QRadioButtonSet
 
@@ -130,7 +144,7 @@ class TCC_GUI(QtWidgets.QWidget):
         print(f'Settings location: {self.settings.fileName()}')
 
         # Set main window props
-        self.setFixedSize(600, 0)
+        self.setFixedSize(780, 0)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowMinimizeButtonHint | QtCore.Qt.WindowCloseButtonHint)
         self.setWindowIcon(QtGui.QIcon(resourcePath(GUI_ICON)))
         self.mouseReleaseEvent = lambda evt: (
@@ -264,20 +278,23 @@ class TCC_GUI(QtWidgets.QWidget):
         self._failsafeCB.toggled.connect(onFailsafeCB)
         self._failsafeCB.setChecked(self._failsafeOn)
 
-        failsafeBox = QtWidgets.QHBoxLayout()
-        failsafeBox.addWidget(self._failsafeCB)
-        failsafeBox.addWidget(self._limitTempGPU)
-        failsafeBox.addWidget(self._limitTempCPU)
-        failsafeBox.addWidget(failsafeIndicator)
+        # Fail-safe controls live on their own row: with 6 thermal modes the
+        # mode selector alone already fills the 600px wide window.
+        failsafeRow = QtWidgets.QHBoxLayout()
+        failsafeRow.addStretch(1)
+        failsafeRow.addWidget(self._failsafeCB)
+        failsafeRow.addWidget(self._limitTempGPU)
+        failsafeRow.addWidget(self._limitTempCPU)
+        failsafeRow.addWidget(failsafeIndicator)
 
         modeBox = QtWidgets.QHBoxLayout()
         modeBox.addWidget(self._modeSwitch, alignment= QtCore.Qt.AlignLeft)
-        modeBox.addWidget(QtWidgets.QWidget(), alignment= QtCore.Qt.AlignRight) # Insert dummy Widget in order to move the following 'failsafeBox' to the right side
-        modeBox.addLayout(failsafeBox)
+        modeBox.addStretch(1)
 
         mainLayout = QtWidgets.QVBoxLayout(self)
         mainLayout.addLayout(lTherm)
         mainLayout.addLayout(modeBox)
+        mainLayout.addLayout(failsafeRow)
         mainLayout.setAlignment(QtCore.Qt.AlignTop)
         mainLayout.setContentsMargins(10, 0, 10, 0)
 
@@ -297,13 +314,24 @@ class TCC_GUI(QtWidgets.QWidget):
         self._thermalGPU.speedSliderChanged(updateFanSpeed)
         self._thermalCPU.speedSliderChanged(updateFanSpeed)
 
+        self._lastGoodModeStr = ThermalMode.Balanced.value
+
         def onModeChange(val: str):
             self._thermalGPU.setSpeedDisabled(val != ThermalMode.Custom.value)
             self._thermalCPU.setSpeedDisabled(val != ThermalMode.Custom.value)
             res = self._awcc.setMode(self._awcc.Mode[val])
             print(f'Set mode {val}: ' + ('ok' if res else 'fail'))
             if not res:
+                if val in UNVERIFIED_MODES:
+                    # 该档位在固件枚举里存在但未被上游验证过，失败时回退，不杀进程
+                    QtWidgets.QMessageBox.warning(
+                        self, "Mode not supported",
+                        f"The firmware rejected '{val}' on this laptop.\n"
+                        f"Reverting to '{self._lastGoodModeStr}'.")
+                    self._modeSwitch.setChecked(self._lastGoodModeStr)
+                    return
                 self._errorExit(f"Failed to set mode {val}", "Program is terminated")
+            self._lastGoodModeStr = val
             updateFanSpeed()
             if val != ThermalMode.G_Mode.value:
                 self._failsafeTrippedPrevModeStr = None # In case the mode was switched manually
@@ -445,6 +473,11 @@ class TCC_GUI(QtWidgets.QWidget):
         )
 
     def toasterMessage(self, message: List[str | None], expire = True) -> None:
+        # Toasts need a registered AppUserModelID; when the app runs elevated or
+        # from a bare interpreter the call fails, so degrade silently instead of
+        # taking the whole UI down on every mode switch.
+        if getattr(self, "_toaster", None) is None:
+            return
         toast = Toast(duration=ToastDuration.Short, expiration_time= (datetime.datetime.now() + datetime.timedelta(seconds=5)) if expire else None)
         toast.text_fields = message
         toast.AddImage(ToastDisplayImage.fromPath(resourcePath(GUI_ICON)))
