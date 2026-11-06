@@ -64,3 +64,8 @@ class AWCCThermal:
 
     def setMode(self, mode: ModeType) -> bool:
         return self._awcc.ApplyThermalMode(mode)
+
+    @property
+    def lastAppliedModeId(self):
+        """Raw firmware id of the last successfully applied thermal mode."""
+        return getattr(self._awcc, 'lastAppliedModeId', None)

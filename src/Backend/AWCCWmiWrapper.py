@@ -32,6 +32,7 @@ class AWCCWmiWrapper:
     def __init__(self, awcc: _wmi_object) -> None:
         self._awcc = awcc
         self._resolvedModeCandidate = {}
+        self.lastAppliedModeId = None # type: Optional[int]
 
     def GetSensorTemperature(self, sensorId: int) -> Optional[int]:
         if not (sensorId in range(self.SENSOR_ID_FIRST, self.SENSOR_ID_LAST + 1)): return None
@@ -104,7 +105,10 @@ class AWCCWmiWrapper:
             if self._balancedModePatch is None:
                 self._balancedModePatch = self._USTT_Balanced if self._Thermal_Control(self._USTT_Balanced) else False
                 print(f'Balanced mode patch: {self._balancedModePatch}')
-            if isinstance(self._balancedModePatch, int):
+            # NOTE: the sentinel is False, and isinstance(False, int) is True in
+            # Python, so this must compare identity - upstream's isinstance()
+            # check silently sends mode 0 (Custom) on machines without USTT.
+            if self._balancedModePatch is not False:
                 value = self._balancedModePatch
 
         return self._Thermal_Control(value)
@@ -115,14 +119,24 @@ class AWCCWmiWrapper:
         arg = ((speed & 0xFF) << 16) | ((fanId & 0xFF) << 8) | 2
         return self._call('Thermal_Control', arg) == 0
 
-    def _Thermal_Control(self, arg: int) -> bool:
-        arg = ((arg & 0xFF) << 8) | 1
-        return self._call('Thermal_Control', arg) == 0
+    def _Thermal_Control(self, modeId: int) -> bool:
+        arg = ((modeId & 0xFF) << 8) | 1
+        ok = self._call('Thermal_Control', arg) == 0
+        if ok:
+            self.lastAppliedModeId = modeId & 0xFF
+        return ok
         
     def _call(self, method: str, arg: int) -> Optional[int]:
         if not hasattr(self._awcc, method) or not callable(getattr(self._awcc, method)):
             return None
-        val: int = getattr(self._awcc, method)(arg)[0]
+        try:
+            val: int = getattr(self._awcc, method)(arg)[0]
+        except Exception as ex:
+            # The Dell provider raises a COM error for some invalid arguments
+            # instead of returning 0xFFFFFFFF. Treat it as a rejection so the
+            # caller can fall through to the next candidate id.
+            print(f'{method}(0x{arg:X}) raised: {ex}')
+            return None
         if not isinstance(val, int) or val == -1 or val == 0xFFFFFFFF: 
             return None
         return val

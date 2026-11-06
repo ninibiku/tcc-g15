@@ -295,6 +295,9 @@ class TCC_GUI(QtWidgets.QWidget):
         mainLayout.addLayout(lTherm)
         mainLayout.addLayout(modeBox)
         mainLayout.addLayout(failsafeRow)
+        self._modeFeedback = QtWidgets.QLabel("")
+        self._modeFeedback.setStyleSheet("color: #9aa0a6; padding-left: 2px;")
+        mainLayout.addWidget(self._modeFeedback)
         mainLayout.setAlignment(QtCore.Qt.AlignTop)
         mainLayout.setContentsMargins(10, 0, 10, 0)
 
@@ -324,6 +327,8 @@ class TCC_GUI(QtWidgets.QWidget):
             if not res:
                 if val in UNVERIFIED_MODES:
                     # 该档位在固件枚举里存在但未被上游验证过，失败时回退，不杀进程
+                    self._modeFeedback.setText(
+                        f"{val}: rejected by the firmware - staying on {self._lastGoodModeStr}")
                     QtWidgets.QMessageBox.warning(
                         self, "Mode not supported",
                         f"The firmware rejected '{val}' on this laptop.\n"
@@ -332,6 +337,10 @@ class TCC_GUI(QtWidgets.QWidget):
                     return
                 self._errorExit(f"Failed to set mode {val}", "Program is terminated")
             self._lastGoodModeStr = val
+            mid = self._awcc.lastAppliedModeId
+            self._modeFeedback.setText(
+                f"Current mode: {val}"
+                + (f"    firmware id {mid} (0x{mid:02X})" if mid is not None else ""))
             updateFanSpeed()
             if val != ThermalMode.G_Mode.value:
                 self._failsafeTrippedPrevModeStr = None # In case the mode was switched manually
