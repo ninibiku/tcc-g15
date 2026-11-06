@@ -108,6 +108,27 @@ python3 -m pip install -r ./requirements.txt
 python3 src\tcc-g15.py
 ```
 
+## Building a standalone exe
+
+`--onefile` fails on at least one Windows 11 25H2 (build 26200) machine with:
+
+```
+[PYI-xxxx:ERROR] Could not create temporary directory!
+```
+
+A trivial `print("hello")` script built the same way reproduces it, so it is a
+PyInstaller onefile extraction problem on that system, not something caused by
+this app. `--onedir` works, and is what this branch ships:
+
+```
+pyinstaller --onedir --windowed --name TCC-G15-quiet ^
+  --paths src --icon icons\gaugeIcon.ico ^
+  --add-data "icons;icons" --add-data "tcc_g15_task.xml;." src\tcc-g15.py
+```
+
+The resulting folder must be kept together — run `TCC-G15-quiet.exe` from
+inside it as administrator.
+
 ## About the AWCC Telemetry
 
 I know it's probably not going to surprise anyone, given the times we're living in, 
