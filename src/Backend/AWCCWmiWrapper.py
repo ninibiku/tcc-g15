@@ -10,17 +10,28 @@ class AWCCWmiWrapper:
 
     class ThermalMode(Enum):
         Custom = 0
-        Quiet = 0x96          # 150 - defined in firmware, not verified upstream
+        Quiet = 0x96          # 150 - classic family
         Balanced = 0x97
-        Performance = 0x98    # 152 - defined in firmware, not verified upstream
-        FullSpeed = 0x99      # 153 - defined in firmware, not verified upstream
+        Performance = 0x98    # 152 - classic family
+        FullSpeed = 0x99      # 153 - classic family
         G_Mode = 0xAB
 
     _balancedModePatch = None # type: Optional[Union[False, int]]
     _USTT_Balanced = 0xA0
 
+    # Some models only answer the classic 150-153 family, others only the USTT
+    # 160-165 family (G15 5520 with i7-12700H is USTT-only: every classic id is
+    # rejected). Try both, then remember which one the firmware accepted.
+    _MODE_CANDIDATES = {
+        ThermalMode.Quiet: (0x96, 0xA3),          # 150 | 163 USTT_Quiet
+        ThermalMode.Performance: (0x98, 0xA1),    # 152 | 161 USTT_Performance
+        ThermalMode.FullSpeed: (0x99, 0xA4),      # 153 | 164 USTT_FullSpeed
+    }
+    _resolvedModeCandidate: dict = {}
+
     def __init__(self, awcc: _wmi_object) -> None:
         self._awcc = awcc
+        self._resolvedModeCandidate = {}
 
     def GetSensorTemperature(self, sensorId: int) -> Optional[int]:
         if not (sensorId in range(self.SENSOR_ID_FIRST, self.SENSOR_ID_LAST + 1)): return None
@@ -71,6 +82,21 @@ class AWCCWmiWrapper:
     def ApplyThermalMode(self, mode: ThermalMode) -> bool:
         if not isinstance(mode, self.ThermalMode):
             raise Exception('Invalid argument: mode is not instance of ThermalMode')
+
+        # Modes that exist in two numbering families: pick the one this
+        # firmware actually answers, then stick to it.
+        candidates = self._MODE_CANDIDATES.get(mode)
+        if candidates is not None:
+            known = self._resolvedModeCandidate.get(mode)
+            if known is not None:
+                return self._Thermal_Control(known)
+            for candidate in candidates:
+                if self._Thermal_Control(candidate):
+                    self._resolvedModeCandidate[mode] = candidate
+                    print(f'{mode.name}: firmware accepted 0x{candidate:02X}')
+                    return True
+            return False
+
         value = mode.value
 
         # Patch balanced mode value for laptops with USTT support

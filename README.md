@@ -41,25 +41,51 @@ Please report if it worked / didn't work for you. Your feedback is highly apprec
 
 ## Extra thermal modes (this branch)
 
-This branch exposes three additional thermal modes that are present in Dell's
-firmware enumeration but were never verified by upstream:
+Dell firmware exposes thermal modes in **two numbering families**, and a given
+machine answers only one of them:
 
-| Mode | WMI value | Status |
+| Family | IDs |
+|---|---|
+| classic | `150` Quiet, `151` Balanced, `152` Performance, `153` FullSpeed |
+| USTT | `160` Balanced, `161` Performance, `162` Cool, `163` Quiet, `164` FullSpeed, `165` BatterySaver |
+| — | `0` Custom, `171` G_Mode |
+
+Upstream only ships `Balanced`, `G_Mode` and `Custom`, because that is all that
+works on the author's machine. This branch adds `Quiet`, `Performance` and
+`FullSpeed`, and for each of them tries the classic ID first and the USTT ID
+second:
+
+```
+Quiet        → 0x96 (150) → 0xA3 (163)
+Performance  → 0x98 (152) → 0xA1 (161)
+FullSpeed    → 0x99 (153) → 0xA4 (164)
+```
+
+The first ID the firmware accepts is remembered for the rest of the session.
+If both are rejected the app shows a warning and reverts to the last working
+mode instead of terminating — upstream calls `errorExit()` there, which closes
+the whole app, and that is why the extra modes were left out.
+
+### Measured: Dell G15 5520, i7-12700H
+
+Probing all IDs directly through `Thermal_Control` gives:
+
+| ID | Mode | Result |
 |---|---|---|
-| Quiet | 150 (`0x96`) | unverified |
-| Performance | 152 (`0x98`) | unverified |
-| FullSpeed | 153 (`0x99`) | unverified |
+| 150-153 | classic family | rejected |
+| 160 | USTT_Balanced | accepted |
+| 161 | USTT_Performance | accepted |
+| 162 | USTT_Cool | rejected |
+| 163 | USTT_Quiet | accepted |
+| 164 | USTT_FullSpeed | rejected |
+| 165 | USTT_BatterySaver | accepted |
+| 171 | G_Mode | accepted |
 
-They show up in the radio-button selector and in the tray menu next to the
-original `Balanced` / `G_Mode` / `Custom`.
+So this model is USTT-only: the classic ids are dead, `Quiet` resolves to `163`,
+and even `Balanced` is really `160` (upstream's `_USTT_Balanced` patch).
 
-**If the firmware rejects a mode**, the app shows a warning and reverts to the
-last mode that worked, instead of terminating. Upstream calls `errorExit()`
-there, which closes the whole app — that is why the extra modes were left out.
-
-Mode support is per-model. Please open an issue on the fork if you can confirm
-which of them actually work on your laptop, including the model and BIOS
-version.
+Please open an issue on the fork with your model and BIOS version if you can
+confirm which IDs your laptop accepts.
 
 ## UI hints
 
